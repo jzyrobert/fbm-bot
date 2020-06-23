@@ -1,6 +1,7 @@
 import discord
 import atexit
 import re
+import tempfile
 from selenium import webdriver
 
 ignore = ["This listing is far from your current location.", "See listings near me"]
@@ -46,9 +47,16 @@ class FBMClient(discord.Client):
                     time = matches.group(1)
                     location = matches.group(2)
                 count += 1
-        output = "Name: {}\n".format(name)
-        output += "Price: {}\n".format(price)
-        output += "Listed: {}\n".format(time)
-        output += "Location: {}".format(location)
-        print(output)
-        await message.channel.send(output)
+        if name == "N/A" and price == "N/A" and time == "N/A" and location == "N/A":
+            print("Something went wrong")
+            print(driver.page_source)
+            log = tempfile.TemporaryFile()
+            log.write(driver.page_source)
+            await message.channel.send("Something went wrong, attaching log", file=discord.File(log, filename="log.txt"))
+        else:
+            output = "Name: {}\n".format(name)
+            output += "Price: {}\n".format(price)
+            output += "Listed: {}\n".format(time)
+            output += "Location: {}".format(location)
+            print(output)
+            await message.channel.send(output)
