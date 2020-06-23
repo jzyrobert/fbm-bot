@@ -33,6 +33,7 @@ class FBMClient(discord.Client):
             return
         print("Received a FBM url")
         driver.get(message.content)
+        print("Processing URL contents")
         count = 1
         for el in driver.find_elements_by_tag_name("span"):
             if el.text != "" and el.text not in ignore:
@@ -45,7 +46,9 @@ class FBMClient(discord.Client):
                     time = matches.group(1)
                     location = matches.group(2)
                 count += 1
-        print("\nName: {}".format(name))
-        print("Price: {}".format(price))
-        print("Listed: {}".format(time))
-        print("Location: {}".format(location))
+        output = "Name: {}\n".format(name)
+        output += "Price: {}\n".format(price)
+        output += "Listed: {}\n".format(time)
+        output += "Location: {}".format(location)
+        print(output)
+        await message.channel.send(output)
