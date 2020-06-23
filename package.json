@@ -1,0 +1,19 @@
+{
+  "name": "fbm-bot",
+  "version": "1.0.0",
+  "description": "Discord bot to scrape FBM links",
+  "main": "bot.js",
+  "dependencies": {
+    "@types/nightmare": "^2.10.4",
+    "discord.js": "^12.2.0",
+    "dotenv": "^8.2.0",
+    "nightmare": "^3.0.2",
+    "typescript": "^3.9.5"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Robert Jin",
+  "license": "ISC"
+}
