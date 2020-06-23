@@ -8,9 +8,12 @@
     "discord.js": "^12.2.0",
     "dotenv": "^8.2.0",
     "nightmare": "^3.0.2",
+    "puppeteer": "^4.0.0",
     "typescript": "^3.9.5"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "@types/puppeteer": "^3.0.0"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
