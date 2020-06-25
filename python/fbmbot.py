@@ -19,8 +19,10 @@ def exit_handler(client):
 
 class FBMClient(discord.Client):
     def find_spans_retry(self, url):
+        print("Attempting to load {}".format(url))
         tries = 0
         while tries < retries:
+            self.driver.get("https://www.google.co.uk")
             self.driver.get(url)
             print("Processing URL contents")
             el = self.driver.find_elements_by_tag_name("span")
@@ -29,6 +31,7 @@ class FBMClient(discord.Client):
             else:
                 print("Found only {} elements, retrying..".format(len(el)))
             tries += 1
+        
         return el
     
     def find_image_try(self):
@@ -112,5 +115,6 @@ class FBMClient(discord.Client):
                 await self.send_embed(message, name, price, time, location, src)
         except Exception as e:
             print("Something went wrong")
+            print(e)
             await self.send_exception(message, e)
         self.lock.release()
