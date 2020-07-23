@@ -4,15 +4,25 @@ import atexit
 import re
 import time
 import tempfile
+import string
 from selenium import webdriver
 
 ignore = ["This listing is far from your current location.", "See listings near me","›"]
 location_regex = re.compile("Listed (.*) in (.*)")
-url_regex = re.compile("https:\/\/www.facebook\.com\/marketplace\/item\/.*")
+full_url_regex = re.compile("(https?:\/\/)?(www.)?(facebook\.com\/)?marketplace\/item\/\d+/?")
+url_id_regex = re.compile("marketplace\/item\/\d+")
 
 name_regex = re.compile("marketplace_listing_title:\"(.*?)\"")
 price_regex = re.compile("formatted_price:{text:\"(£.*?)\"}")
 second_location_regex = re.compile("location_text:{text:\"(.*?)\"}")
+
+pending_regex = re.compile("\"?is_pending\"?:true")
+sold_regex = re.compile("\"?is_sold\"?:true")
+
+userMessages = {
+    "goodfbmbot" : "Thank you",
+    "badfbmbot" : "I'm sorry"
+}
 
 retries = 2
 minimumElements = 20
@@ -22,15 +32,28 @@ def exit_handler(client):
     if client.driver:
         client.driver.quit()
 
+def url_matches_fbm(url):
+    return full_url_regex.search(url) != None
+
+def get_url_from_message(url):
+    return "https://www.facebook.com/" + str(url_id_regex.search(url).group(0)) + "/"
+
+def get_matching_urls(content):
+    matches = [match.group() for match in re.finditer(full_url_regex, content)]
+    return list(set([get_url_from_message(match) for match in matches]))
+
 class FBMClient(discord.Client):
-    async def scrape_first_method(self, message):
+    async def scrape_first_method(self, message, url):
         name = "N/A"
         price = "N/A"
         time = "N/A"
         location = "N/A"
         try:
-            elementsFound, spanSuccess = self.find_spans_retry(message.content)
-            if not spanSuccess:
+            elementsFound, spanSuccess, redirect = self.find_spans_retry(url)
+            if redirect:
+                await self.send_sold_message(message, url)
+                return True
+            elif not spanSuccess:
                 return False
             print("Found {} spans".format(len(elementsFound)))
             for i in range(len(elementsFound)):
@@ -48,6 +71,11 @@ class FBMClient(discord.Client):
                             price = el.text
                             name = elementsFound[j-1].text
                     break
+            #Ensure name is correct
+            if nameMatch := name_regex.search(self.driver.page_source):
+                nameCheck = nameMatch.group(1)
+                if nameCheck != name:
+                    name = nameCheck
             if name == "N/A" and price == "N/A" and time == "N/A" and location == "N/A":
                 print("Something went wrong with method 1")
                 return False
@@ -59,14 +87,14 @@ class FBMClient(discord.Client):
                 print(output)
                 # acquire the image
                 src = self.find_image_try()
-                await self.send_embed(message, name, price, time, location, src)
+                await self.send_embed(message, url, name, price, time, location, src)
                 return True
         except Exception as e:
             print("Something went wrong with method 1")
             print(e)
             return False
     
-    async def scrape_second_method(self, message):
+    async def scrape_second_method(self, message, url):
         # Assumes page has been loaded
         name = "N/A"
         price = "N/A"
@@ -98,24 +126,28 @@ class FBMClient(discord.Client):
         output += "Price: {}\n".format(price)
         output += "Location: {}".format(location)
         print(output)
-        await self.send_embed(message, name, price, "", location, "")
+        await self.send_embed(message, url, name, price, "", location, "")
         return True
 
     def find_spans_retry(self, url):
         print("Attempting to load {}".format(url))
         tries = 0
         self.driver.get(url)
+        currentUrl = self.driver.current_url
+        if currentUrl != url:
+            print("We were redirected to {}".format(currentUrl))
+            return [], False, True
         while tries <= retries:
             time.sleep(1)
             print("Processing URL contents")
             el = self.driver.find_elements_by_tag_name("span")
             if len(el) > minimumElements:
-                return el, True
+                return el, True, False
             else:
                 print("Found only {} elements, retrying..".format(len(el)))
             tries += 1
         print("Finding spans failed..")
-        return el, False
+        return el, False, False
     
     def find_image_try(self):
         images = self.driver.find_elements_by_tag_name("img")
@@ -132,15 +164,24 @@ class FBMClient(discord.Client):
             await message.channel.send("Something went wrong, attaching log...",file=discord.File(temp, filename="log.txt"))
             temp.close()
     
-    async def send_embed(self, message, name, price, time, location, imageurl):
+    async def send_sold_message(self, message, url):
+        await message.channel.send("Bot was redirected for {}, item has likely sold or been removed.".format(url))
+    
+    async def send_embed(self, message, url, name, price, time, location, imageurl):
         embed = discord.Embed(colour=0x3577E5)
-        embed.set_author(name=name)
+        embed.set_author(name=name, url=url)
         embed.add_field(name="Price",value=price,inline=True)
         if time != "":
             embed.add_field(name="Listed",value=time,inline=True)
         embed.add_field(name="Location",value=location,inline=True)
         if imageurl != "":
             embed.set_thumbnail(url=imageurl)
+        if pending_regex.search(self.driver.page_source):
+            print("Found pending status")
+            embed.set_footer(text="**PENDING SOLD**")
+        elif sold_regex.search(self.driver.page_source):
+            print("Found sold status")
+            embed.set_footer(text="**SOLD**")
         await message.channel.send(embed=embed)
 
     async def on_ready(self):
@@ -154,21 +195,32 @@ class FBMClient(discord.Client):
         atexit.register(exit_handler, self)
         self.lock = asyncio.Lock()
 
-    async def on_message(self, message):        
+    async def on_message(self, message):
+        if message.author == self.user:
+            print("Seen message from self")
+            return
+        stripped = message.content.strip().lower().translate(str.maketrans('', '', string.punctuation)).translate(str.maketrans('', '', string.whitespace))
+        print("Stripped is {}".format(stripped))
+        if stripped in userMessages:
+            await message.channel.send(userMessages[stripped] + ", {}.".format(message.author.name))
+            return
         name = "N/A"
         price = "N/A"
         time = "N/A"
         location = "N/A"
 
-        if not url_regex.match(message.content):
+        matchingUrls = get_matching_urls(message.content)
+        matchingCount = len(matchingUrls)
+        if matchingCount == 0:
             return
         if message.guild:
-            print("Received a FBM url from server {}, channel {}, user {}".format(message.guild.id, message.channel.id, message.author.name))
+            print("Received {} unique FBM url(s) from server {}, channel {}, user {}".format(matchingCount, message.guild.id, message.channel.id, message.author.name))
         else:
-            print("Received a FBM url in private message from {}".format(message.author.name))
+            print("Received {} unique FBM url(s) in private message from {}".format(matchingCount, message.author.name))
         await self.lock.acquire()
-        success = await self.scrape_first_method(message)
-        if not success:
-            await self.scrape_second_method(message)
+        for url in matchingUrls:
+            success = await self.scrape_first_method(message, url)
+            if not success:
+                await self.scrape_second_method(message, url)
         
         self.lock.release()
