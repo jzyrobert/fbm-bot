@@ -49,17 +49,22 @@ class FBMClient(discord.Client):
         time = "N/A"
         location = "N/A"
         try:
-            elementsFound, spanSuccess, redirect = self.find_spans_retry(url)
+            elementsFound, spanSuccess, redirect, newUrl = self.find_spans_retry(url)
             if redirect:
-                await self.send_sold_message(message, url)
+                await self.send_sold_message(message, url, newUrl)
                 return True
             elif not spanSuccess:
                 return False
             print("Found {} spans".format(len(elementsFound)))
             for i in range(len(elementsFound)):
                 el = elementsFound[i]
-                if location_regex.match(el.text):
-                    matches = location_regex.match(el.text)
+                elementText = ""
+                try:
+                    elementText = el.text
+                except Exception as e:
+                    print(e)
+                if location_regex.match(elementText):
+                    matches = location_regex.match(elementText)
                     time = matches.group(1)
                     location = matches.group(2)
                     # go in reverse
@@ -67,13 +72,19 @@ class FBMClient(discord.Client):
                     while j >= 1:
                         j -= 1
                         el = elementsFound[j]
-                        if el.text not in ignore and el.text.startswith("£"):
-                            price = el.text
+                        elementText = ""
+                        try:
+                            elementText = el.text
+                        except Exception as e:
+                            print(e)
+                        if elementText not in ignore and (elementText.startswith("£") or elementText == "FREE"):
+                            price = elementText
                             name = elementsFound[j-1].text
                     break
             #Ensure name is correct
             if nameMatch := name_regex.search(self.driver.page_source):
                 nameCheck = nameMatch.group(1)
+                print("Regex found name as {}, currently is {}".format(nameCheck, name))
                 if nameCheck != name:
                     name = nameCheck
             if name == "N/A" and price == "N/A" and time == "N/A" and location == "N/A":
@@ -93,7 +104,7 @@ class FBMClient(discord.Client):
             print("Something went wrong with method 1")
             print(e)
             return False
-    
+
     async def scrape_second_method(self, message, url):
         # Assumes page has been loaded
         name = "N/A"
@@ -136,7 +147,7 @@ class FBMClient(discord.Client):
         currentUrl = self.driver.current_url
         if currentUrl != url:
             print("We were redirected to {}".format(currentUrl))
-            return [], False, True
+            return [], False, True, currentUrl
         while tries <= retries:
             time.sleep(1)
             print("Processing URL contents")
@@ -148,7 +159,7 @@ class FBMClient(discord.Client):
             tries += 1
         print("Finding spans failed..")
         return el, False, False
-    
+
     def find_image_try(self):
         images = self.driver.find_elements_by_tag_name("img")
         if len(images) > 0:
@@ -163,11 +174,12 @@ class FBMClient(discord.Client):
             temp.seek(0)
             await message.channel.send("Something went wrong, attaching log...",file=discord.File(temp, filename="log.txt"))
             temp.close()
-    
-    async def send_sold_message(self, message, url):
-        await message.channel.send("Bot was redirected for {}, item has likely sold or been removed.".format(url))
-    
+
+    async def send_sold_message(self, message, url, newUrl):
+        await message.channel.send("Bot was redirected to {}, could not load item.".format(newUrl))
+
     async def send_embed(self, message, url, name, price, time, location, imageurl):
+        embed_foot_text = ""
         embed = discord.Embed(colour=0x3577E5)
         embed.set_author(name=name, url=url)
         embed.add_field(name="Price",value=price,inline=True)
@@ -178,10 +190,14 @@ class FBMClient(discord.Client):
             embed.set_thumbnail(url=imageurl)
         if pending_regex.search(self.driver.page_source):
             print("Found pending status")
-            embed.set_footer(text="**PENDING SOLD**")
+            embed_foot_text += "**PENDING SOLD**"
         elif sold_regex.search(self.driver.page_source):
             print("Found sold status")
-            embed.set_footer(text="**SOLD**")
+            embed_foot_text += "**SOLD**"
+        if price == "FREE":
+            embed_foot_text += "\n**Note: FREE most likely means taking offers**"
+        if embed_foot_text != "":
+            embed.set_footer(text=embed_foot_text)
         await message.channel.send(embed=embed)
 
     async def on_ready(self):
@@ -200,7 +216,6 @@ class FBMClient(discord.Client):
             print("Seen message from self")
             return
         stripped = message.content.strip().lower().translate(str.maketrans('', '', string.punctuation)).translate(str.maketrans('', '', string.whitespace))
-        print("Stripped is {}".format(stripped))
         if stripped in userMessages:
             await message.channel.send(userMessages[stripped] + ", {}.".format(message.author.name))
             return
@@ -217,10 +232,14 @@ class FBMClient(discord.Client):
             print("Received {} unique FBM url(s) from server {}, channel {}, user {}".format(matchingCount, message.guild.id, message.channel.id, message.author.name))
         else:
             print("Received {} unique FBM url(s) in private message from {}".format(matchingCount, message.author.name))
+        try:
+            await message.edit(suppress=True)
+        except:
+            print("Attempted to remove embed when did not have manage permission.")
         await self.lock.acquire()
         for url in matchingUrls:
             success = await self.scrape_first_method(message, url)
             if not success:
                 await self.scrape_second_method(message, url)
-        
+
         self.lock.release()
