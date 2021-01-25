@@ -93,7 +93,7 @@ class FBMClient(discord.Client):
                 output += "Location: {}".format(location)
                 print(output)
                 # acquire the image
-                src = self.find_image_try()
+                src = self.find_images()
                 await self.send_embed(message, url, name, price, time, location, src)
                 return True
         except Exception as e:
@@ -171,7 +171,7 @@ class FBMClient(discord.Client):
                 print("Error occurred getting element text")
         return elText, False, False, ""
 
-    def find_image_try(self):
+    def find_images(self):
         images = self.driver.find_elements_by_tag_name("img")
         if len(images) > 0:
             return images[0].get_attribute('src')
@@ -187,7 +187,7 @@ class FBMClient(discord.Client):
             temp.close()
 
     async def send_sold_message(self, message, url, newUrl):
-        await message.channel.send("Bot was redirected to {}, could not load item.".format(newUrl))
+        await message.channel.send("Bot could not load {}".format(url))
 
     async def send_embed(self, message, url, name, price, time, location, imageurl):
         embed_foot_text = ""
