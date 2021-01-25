@@ -8,13 +8,13 @@ import string
 from selenium import webdriver
 
 ignore = ["This listing is far from your current location.", "See listings near me","›"]
-location_regex = re.compile("Listed (.*) in (.*)")
+location_regex = re.compile("Listed ?(.*)? in (.*)")
 full_url_regex = re.compile("(https?:\/\/)?(www.)?(facebook\.com\/)?marketplace\/item\/\d+/?")
 url_id_regex = re.compile("marketplace\/item\/\d+")
 
-name_regex = re.compile("marketplace_listing_title:\"(.*?)\"")
-price_regex = re.compile("formatted_price:{text:\"(£.*?)\"}")
-second_location_regex = re.compile("location_text:{text:\"(.*?)\"}")
+name_regex = re.compile("marketplace_listing_title\"?:\"(.*?)\"")
+price_regex = re.compile("formatted_price\"?:{\"?text\"?:\"(.*?)\"}")
+second_location_regex = re.compile("location_text\"?:{\"?text\"?:\"(.*?)\"}")
 
 pending_regex = re.compile("\"?is_pending\"?:true")
 sold_regex = re.compile("\"?is_sold\"?:true")
@@ -56,31 +56,27 @@ class FBMClient(discord.Client):
             elif not spanSuccess:
                 return False
             print("Found {} spans".format(len(elementsFound)))
-            for i in range(len(elementsFound)):
-                el = elementsFound[i]
-                elementText = ""
-                try:
-                    elementText = el.text
-                except Exception as e:
-                    print(e)
+            for i, elementText in enumerate(elementsFound):
                 if location_regex.match(elementText):
                     matches = location_regex.match(elementText)
-                    time = matches.group(1)
-                    location = matches.group(2)
+                    print(matches.groups())
+                    if matches.group(1) != "":
+                        time = matches.group(1)
+                        location = matches.group(2)
+                    elif matches.group(2) != "":
+                        location = matches.group(2)
                     # go in reverse
                     j = i
                     while j >= 1:
                         j -= 1
-                        el = elementsFound[j]
-                        elementText = ""
-                        try:
-                            elementText = el.text
-                        except Exception as e:
-                            print(e)
+                        elementText = elementsFound[j]
                         if elementText not in ignore and (elementText.startswith("£") or elementText == "FREE"):
                             price = elementText
-                            name = elementsFound[j-1].text
+                            name = elementsFound[j-1]
                     break
+            if location == "N/A":
+                print("Could not find location regex in any spans")
+                return False
             #Ensure name is correct
             if nameMatch := name_regex.search(self.driver.page_source):
                 nameCheck = nameMatch.group(1)
@@ -153,12 +149,27 @@ class FBMClient(discord.Client):
             print("Processing URL contents")
             el = self.driver.find_elements_by_tag_name("span")
             if len(el) > minimumElements:
-                return el, True, False
+                elText = []
+                for e in el:
+                    try:
+                        text = e.text
+                        if text != "":
+                            elText.append(text)
+                    except:
+                        print("Error occurred getting element text")
+                return elText, True, False, ""
             else:
                 print("Found only {} elements, retrying..".format(len(el)))
             tries += 1
         print("Finding spans failed..")
-        return el, False, False
+        elText = []
+        for e in el:
+            try:
+                text = e.text
+                elText.append(text)
+            except:
+                print("Error occurred getting element text")
+        return elText, False, False, ""
 
     def find_image_try(self):
         images = self.driver.find_elements_by_tag_name("img")
@@ -182,7 +193,15 @@ class FBMClient(discord.Client):
         embed_foot_text = ""
         embed = discord.Embed(colour=0x3577E5)
         embed.set_author(name=name, url=url)
-        embed.add_field(name="Price",value=price,inline=True)
+        if len(price.split('£')) > 2:
+            prices = price.split('£')
+            # Reduced price
+            embed.add_field(name="Price",value="£" + prices[1],inline=True)
+            embed.add_field(name="Previous Price", value="~~£" + prices[2] + "~~",inline=True)
+        else:
+            if price[0] == "\\":
+                price = "£" + price[6:]
+            embed.add_field(name="Price",value=price,inline=True)
         if time != "":
             embed.add_field(name="Listed",value=time,inline=True)
         embed.add_field(name="Location",value=location,inline=True)
