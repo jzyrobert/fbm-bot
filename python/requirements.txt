@@ -74,7 +74,7 @@ pyserial==3.5
 python-apt==2.0.0+ubuntu0.20.4.4
 python-debian==0.1.39
 python-dotenv==0.17.0
-PyYAML==5.3.1
+PyYAML==5.4
 requests==2.25.1
 requests-html==0.10.0
 requests-unixsocket==0.2.0
