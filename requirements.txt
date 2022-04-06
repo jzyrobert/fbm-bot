@@ -89,7 +89,7 @@ ssh-import-id==5.11
 systemd-python==234
 toml==0.10.2
 tqdm==4.60.0
-Twisted==21.2.0
+Twisted==22.2.0
 typing-extensions==3.7.4.3
 ubuntu-advantage-tools==20.3
 ubuntu-drivers-common==0.0.0
